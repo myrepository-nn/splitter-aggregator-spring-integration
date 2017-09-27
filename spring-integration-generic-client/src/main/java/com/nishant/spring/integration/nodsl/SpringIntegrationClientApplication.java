@@ -1,7 +1,6 @@
 package com.nishant.spring.integration.nodsl;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Scanner;
@@ -11,7 +10,11 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.integration.aggregator.AggregatingMessageHandler;
+import org.springframework.integration.aggregator.CorrelationStrategy;
 import org.springframework.integration.aggregator.DefaultAggregatingMessageGroupProcessor;
+import org.springframework.integration.aggregator.HeaderAttributeCorrelationStrategy;
+import org.springframework.integration.aggregator.ReleaseStrategy;
+import org.springframework.integration.aggregator.SimpleSequenceSizeReleaseStrategy;
 import org.springframework.integration.annotation.MessagingGateway;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.annotation.Splitter;
@@ -76,7 +79,7 @@ public class SpringIntegrationClientApplication {
 	@Bean
 	public AbstractMessageSplitter router() {
 		MethodInvokingSplitter eer=new MethodInvokingSplitter(messageSpl(),"method");
-		eer.setOutputChannel(defaultChannel());
+		eer.setOutputChannel(displayChannel());
 		return eer;
 	}
 
@@ -86,6 +89,25 @@ public class SpringIntegrationClientApplication {
 	public MessageSpl messageSpl() {
 		return new MessageSpl();
 	}	
+	@Bean
+	public MessageChannel displayChannel() {
+		return new DirectChannel();
+	}
+
+	@Bean
+	@ServiceActivator(inputChannel="displayChannel")
+	public MessageHandler displayNforward() {
+		ServiceActivatingHandler sah= new ServiceActivatingHandler(new MessageProcessor<Object>() {
+
+			@Override
+			public Object processMessage(Message<?> message) {
+				System.out.println("Message after split ="+message);
+				return message;
+			}
+		});
+		sah.setOutputChannel(defaultChannel());
+		return sah;
+	}
 
 	@Bean
 	public MessageChannel defaultChannel() {
@@ -117,6 +139,12 @@ public class SpringIntegrationClientApplication {
 		return sms;
 	}
 
+	@Bean
+	public ReleaseStrategy releaseStrategy() {
+		return new SimpleSequenceSizeReleaseStrategy();
+	}
+
+
 	@ServiceActivator(inputChannel = "forwrdChannel")
 	@Bean
 	public MessageHandler aggregator(MessageGroupStore messageGroupStore) {
@@ -125,6 +153,7 @@ public class SpringIntegrationClientApplication {
 						messageGroupStore);
 		aggregator.setOutputChannel(outputChannel());
 		aggregator.setGroupTimeoutExpression(new ValueExpression<>(500L));
+		aggregator.setReleaseStrategy(releaseStrategy());
 		return aggregator;
 	}
 
@@ -140,19 +169,19 @@ public class SpringIntegrationClientApplication {
 
 			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
-				System.out.println("outputChannel 1 "+message+"<<>>>"+message.getPayload().getClass());
+				System.out.println("message after aggregator= "+message+"<<>>>"+message.getPayload().getClass());
 				List<Object> arr=(List<Object>) message.getPayload();
 				Account ac = null;
 				List<AccountHolders> lah=new ArrayList<>();
 				for(Object o:arr) {
 					if(o instanceof Account) {
-                       ac=(Account) o;
+						ac=(Account) o;
 					}else {
 						lah.add((AccountHolders) o);
 					}
 				}
 				ac.setAccountHolders(lah);
-				System.out.println("outputChannel 2 "+ac.getAccountNo()+"----------"+ac.getAccountHolders().get(0).getName()+"----------"+ac.getAccountHolders().get(1).getName());
+				System.out.println("Final display= "+ac.getAccountNo()+"----------"+ac.getAccountHolders().get(0).getName()+"----------"+ac.getAccountHolders().get(1).getName());
 
 			}
 		};
